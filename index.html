@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HelloWorld 合約測試</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 40px; background-color: #fafafa;}
+        .container { background: white; border: 1px solid #e0e0e0; padding: 30px; width: 450px; margin: 0 auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; }
+        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+        button { width: 100%; padding: 12px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:hover { background-color: #e4e4e4; }
+        button:disabled { background-color: #f9f9f9; color: #aaa; cursor: not-allowed; }
+        input { width: 93%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .log-box { background: #f9f9f9; padding: 15px; text-align: left; font-size: 13px; color: #555; border-radius: 4px; border: 1px solid #eee; min-height: 50px; }
+        .warning { font-size: 12px; color: #888; margin-top: 10px; text-align: left; }
+    </style>
+</head>
+<body>
+
+<h2>HelloWorld 合約測試</h2>
+<div class="container">
+    <p style="font-size: 14px; color: #555; text-align: left;">這是一個簡單的網頁，用於測試已部署在 Sepolia 網路上的 HelloWorld 合約。</p>
+    <hr>
+
+    <h3>當前訊息</h3>
+    <button id="connectBtn">連接 MetaMask</button>
+    <p id="currentMsg" style="text-align: left; font-size: 14px; margin-top: 15px;">尚未讀取訊息，請先連接錢包。</p>
+    <hr>
+
+    <h3>更新訊息</h3>
+    <input type="text" id="newMessage" placeholder="輸入新的訊息...">
+    <button id="updateBtn" disabled>更新訊息</button>
+    <p class="warning">⚠️ 此操作會發送一筆交易，需要支付 Gas 費用。</p>
+    <hr>
+
+    <h3>交易日誌</h3>
+    <div id="logArea" class="log-box">日誌會顯示在這裡。請點擊『連接 MetaMask』按鈕，開始測試。</div>
+</div>
+
+<script>
+    // ！！！請將下方引號內的地址，替換成你剛剛在 Remix 部署的合約地址！！！
+    const contractAddress = "0x4373095F16A5DFCab03ea9A7Fe6997c83C734E81"; 
+    
+    // 這是我們剛剛寫的合約的 ABI (應用程式二進位介面)，讓 JS 知道合約有哪些功能
+    const contractABI = [
+        "function message() public view returns (string)",
+        "function update(string newMessage) public"
+    ];
+
+    let provider, signer, contract;
+
+    const connectBtn = document.getElementById('connectBtn');
+    const updateBtn = document.getElementById('updateBtn');
+    const currentMsg = document.getElementById('currentMsg');
+    const logArea = document.getElementById('logArea');
+    const newMessageInput = document.getElementById('newMessage');
+
+    function addLog(msg) {
+        logArea.innerHTML = `<div style="margin-bottom: 5px;">${msg}</div>` + logArea.innerHTML;
+    }
+
+    // 點擊連接錢包
+    connectBtn.onclick = async () => {
+        if (typeof window.ethereum !== 'undefined') {
+            try {
+                // 要求連線 MetaMask
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+                
+                // 建立合約實例
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+                const address = await signer.getAddress();
+                connectBtn.innerText = `已連接: ${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+                updateBtn.disabled = false;
+                logArea.innerHTML = ''; // 清空初始日誌
+                addLog("✅ 錢包連接成功！");
+                
+                // 讀取當前合約訊息
+                readMessage();
+            } catch (error) {
+                addLog("❌ 連接失敗: " + error.message);
+            }
+        } else {
+            addLog("⚠️ 請安裝 MetaMask 擴充功能！");
+        }
+    };
+
+    // 讀取合約資料
+    async function readMessage() {
+        try {
+            addLog("讀取合約訊息中...");
+            const msg = await contract.message(); // 呼叫合約的 message 變數
+            currentMsg.innerHTML = `<strong>讀取到的訊息：</strong> ${msg}`;
+            addLog("✅ 讀取成功！");
+        } catch (error) {
+            addLog("❌ 讀取失敗，請檢查網路是否在 Sepolia，或合約地址是否正確。");
+            console.error(error);
+        }
+    }
+
+    // 點擊更新訊息（發送交易）
+    updateBtn.onclick = async () => {
+        const newMsg = newMessageInput.value;
+        if (!newMsg) return alert("請輸入想要更新的訊息！");
+
+        try {
+            addLog("⏳ 正在發起交易，請在 MetaMask 中確認...");
+            // 呼叫合約的 update 函數
+            const tx = await contract.update(newMsg);
+            addLog(`🚀 交易已送出，等待區塊鏈打包... (Tx Hash: ${tx.hash.substring(0,10)}...)`);
+
+            updateBtn.disabled = true; // 交易期間暫時停用按鈕
+            
+            // 等待交易被寫入區塊
+            await tx.wait();
+            
+            addLog("✅ 交易成功！資料已寫入區塊鏈。");
+            newMessageInput.value = ''; // 清空輸入框
+            updateBtn.disabled = false;
+            
+            // 重新讀取最新的訊息
+            readMessage();
+        } catch (error) {
+            addLog("❌ 交易失敗: " + error.message);
+            updateBtn.disabled = false;
+        }
+    };
+</script>
+</body>
+</html>
